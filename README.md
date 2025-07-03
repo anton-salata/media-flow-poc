@@ -3,8 +3,6 @@
 
 ⚠️ This repository contains experimental code for a POC. A redesigned version with enhanced capabilities is currently in development.
 
-This AI-powered pipeline demonstrates automated content creation
-
 ---
 
 Tech Stack
