@@ -1,0 +1,42 @@
+﻿import argparse
+from moviepy import *
+from moviepy.video.tools.subtitles import SubtitlesClip
+
+def create_video(image_path, srt_path, audio_path, output_path):
+    # Load audio first to get duration
+    audio = AudioFileClip(audio_path)
+    
+    # Create image clip with explicit duration
+    image_clip = ImageClip(image_path, duration=audio.duration)
+    
+    # Load subtitles from the SRT file
+    generator = lambda txt: TextClip(
+        text=txt, font_size=12, color="white", bg_color="black"
+    )
+
+    # subs = [((0, 1), 'sub111'),
+    #     ((1, 2), 'sub222'),
+    #     ((3, 4), 'sub777'),
+    #     ((4, 5), 'sub999')]
+
+    subtitles = SubtitlesClip(subtitles= srt_path, make_textclip= generator).with_duration(audio.duration)
+    
+    # Combine image, subtitles, and audio
+    final_clip = CompositeVideoClip([
+        image_clip,
+        subtitles.with_position(("center", "center"))
+    ]).with_audio(audio)
+    
+    # Write the output video file
+    final_clip.write_videofile(output_path, fps=24, codec="libx264")
+    print(f"Video saved to {output_path}!")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create a video from image, subtitles (SRT), and audio.")
+    parser.add_argument("--image", required=True, help="Path to the image file")
+    parser.add_argument("--srt", required=True, help="Path to the SRT subtitles file")
+    parser.add_argument("--audio", required=True, help="Path to the audio file")
+    parser.add_argument("--output", default="output.mp4", help="Output video path (default: output.mp4)")
+    
+    args = parser.parse_args()
+    create_video(args.image, args.srt, args.audio, args.output)

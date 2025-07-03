@@ -1,0 +1,89 @@
+import argparse
+import srt
+import pysubs2
+import subprocess
+from datetime import timedelta
+from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, CompositeAudioClip
+from moviepy.audio import fx as afx
+
+
+def parse_srt_file(srt_path):
+    with open(srt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    subtitles = list(srt.parse(content))
+    return subtitles
+
+def convert_srt_to_ass(srt_path, ass_path):
+    print("Converting SRT to ASS...")
+    subs = pysubs2.load(srt_path, encoding="utf-8")
+
+    # Apply global style similar to YouTube Shorts
+    style = subs.styles["Default"]
+    style.fontname = "Arial"
+    style.fontsize = 18
+    style.bold = True
+    style.primarycolor = pysubs2.Color(255, 255, 255)   # White text
+    style.outlinecolor = pysubs2.Color(0, 0, 0)         # Black border
+    style.backcolor = pysubs2.Color(0, 0, 0, 128)       # Semi-transparent bg
+    style.outline = 2
+    style.shadow = 1
+    style.alignment = pysubs2.Alignment.MIDDLE_CENTER
+
+    subs.save(ass_path)
+    print(f"Saved styled ASS to: {ass_path}")
+
+def create_base_video(image_path, audio_path, duration, tmp_video_path, music_path=None):
+    print("Creating base video...")
+    audio = AudioFileClip(audio_path)
+    
+    if music_path:
+        music_audio = AudioFileClip(music_path).with_effects([afx.MultiplyVolume(0.1)])
+        final_audio = CompositeAudioClip([music_audio, audio])
+    else:
+        final_audio = audio
+
+    image_clip = ImageClip(image_path).with_duration(duration)
+    video = CompositeVideoClip([image_clip]).with_audio(final_audio)
+    video.write_videofile(tmp_video_path, fps=24, codec="libx264")
+    return tmp_video_path
+
+def burn_subtitles_ffmpeg(input_path, ass_path, output_path):
+    print("Burning ASS subtitles with ffmpeg...")
+    cmd = [
+        "ffmpeg",
+        "-y",  # Overwrite output
+        "-i", input_path,
+        "-vf", f"ass={ass_path}",
+        "-c:a", "copy",  # Keep original audio
+        output_path
+    ]
+    subprocess.run(cmd, check=True)
+    print(f"Final video saved: {output_path}")
+
+def create_video(image_path, srt_path, audio_path, output_path, music_path=None):
+    tmp_video_path = "temp_video.mp4"
+    ass_path = "styled_subs.ass"
+
+    # Parse subtitles and determine final duration
+    subtitles = parse_srt_file(srt_path)
+    final_duration = max(sub.end.total_seconds() for sub in subtitles)
+
+    # Step 1: Generate base video
+    create_base_video(image_path, audio_path, final_duration, tmp_video_path, music_path)
+
+    # Step 2: Convert subtitles to styled ASS
+    convert_srt_to_ass(srt_path, ass_path)
+
+    # Step 3: Burn ASS into final video
+    burn_subtitles_ffmpeg(tmp_video_path, ass_path, output_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create a video from image, audio, and SRT subtitles with styled rendering.")
+    parser.add_argument("--image", required=True, help="Path to the image file")
+    parser.add_argument("--srt", required=True, help="Path to the SRT subtitles file")
+    parser.add_argument("--audio", required=True, help="Path to the audio file")
+    parser.add_argument("--music", required=False, help="Optional background music audio file")
+    parser.add_argument("--output", default="output.mp4", help="Output video path (default: output.mp4)")
+
+    args = parser.parse_args()
+    create_video(args.image, args.srt, args.audio, args.output,args.music)

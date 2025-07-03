@@ -1,0 +1,134 @@
+import argparse
+import srt
+import pysubs2
+import subprocess
+import random
+from datetime import timedelta
+from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, CompositeAudioClip
+from moviepy.audio import fx as afx
+from moviepy.video import fx as vfx
+
+
+
+def parse_srt_file(srt_path):
+    with open(srt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    subtitles = list(srt.parse(content))
+    return subtitles
+
+def convert_srt_to_ass(srt_path, ass_path):
+    # palette = [
+    # {"primary": (255, 215, 0), "outline": (139, 69, 19)},   # Gold text, brown outline
+    # {"primary": (255, 140, 0), "outline": (128, 0, 0)},     # Dark orange text, dark red outline
+    # {"primary": (255, 69, 0), "outline": (128, 0, 0)},      # Red-orange text, dark red outline
+    # {"primary": (255, 99, 71), "outline": (139, 69, 19)},   # Tomato text, brown outline
+    # {"primary": (255, 165, 79), "outline": (160, 82, 45)},  # Light orange text, sienna outline
+    # ]
+    
+    palette = [
+    {"primary": (255, 255, 255), "outline": (0, 0, 0)},         # White / Black
+    {"primary": (255, 215, 0), "outline": (0, 0, 128)},         # Gold / Navy Blue
+    {"primary": (0, 255, 255), "outline": (0, 0, 139)},         # Cyan / Dark Blue
+    {"primary": (255, 69, 0), "outline": (0, 0, 0)},            # Red-Orange / Black
+    {"primary": (255, 20, 147), "outline": (75, 0, 130)},       # Deep Pink / Indigo
+    {"primary": (173, 255, 47), "outline": (0, 100, 0)},        # Green Yellow / Dark Green
+    {"primary": (255, 140, 0), "outline": (0, 0, 0)},           # Dark Orange / Black
+    {"primary": (0, 191, 255), "outline": (25, 25, 112)},       # Deep Sky Blue / Midnight Blue
+    {"primary": (255, 182, 193), "outline": (139, 0, 139)},     # Light Pink / Dark Magenta
+    {"primary": (240, 230, 140), "outline": (85, 107, 47)},     # Khaki / Dark Olive Green
+    {"primary": (124, 252, 0), "outline": (0, 128, 0)},         # Lawn Green / Green
+    {"primary": (255, 105, 180), "outline": (128, 0, 128)},     # Hot Pink / Purple
+    {"primary": (0, 255, 127), "outline": (0, 100, 0)},         # Spring Green / Dark Green
+    {"primary": (255, 250, 205), "outline": (139, 69, 19)},     # Lemon Chiffon / Saddle Brown
+    {"primary": (135, 206, 235), "outline": (25, 25, 112)},     # Sky Blue / Midnight Blue
+]
+
+    print("Converting SRT to ASS...")
+    subs = pysubs2.load(srt_path, encoding="utf-8")
+
+    color_pair = random.choice(palette)
+
+    # Apply global style similar to YouTube Shorts
+    style = subs.styles["Default"]
+    style.fontname = "Arial"
+    style.fontsize = 18
+    style.bold = True
+    style.primarycolor = pysubs2.Color(*color_pair["primary"])
+    style.outlinecolor = pysubs2.Color(*color_pair["outline"])
+    style.backcolor = pysubs2.Color(0, 0, 0, 128)       # Semi-transparent bg
+    style.outline = 2
+    style.shadow = 1
+    style.alignment = pysubs2.Alignment.MIDDLE_CENTER
+
+    subs.save(ass_path)
+    print(f"Saved styled ASS to: {ass_path}")
+
+def create_base_video(image_path, audio_path, duration, tmp_video_path, music_path=None):
+    print("Creating base video...")
+    audio = AudioFileClip(audio_path)
+    
+    if music_path:
+        music_audio = AudioFileClip(music_path).with_effects([afx.MultiplyVolume(0.1)])
+        final_audio = CompositeAudioClip([music_audio, audio])
+    else:
+        final_audio = audio
+
+    image_clip = ImageClip(image_path).with_duration(duration)
+    
+    # Zoom in from 100% to 120% over duration
+    zoomed = image_clip.with_effects([
+        vfx.Resize(lambda t: 1 + 0.15 * (t / duration))  # scale from 1.0 to 1.2
+    ])
+    
+    # # Optional: Pan by cropping from left to right over duration
+    # panned = zoomed.with_effects([
+    #     vfx.Crop(x1=lambda t: int(zoomed.w * 0.1 * (t / duration)))  # crop starts shifting horizontally
+    # ])
+    
+    image_clip = zoomed
+
+
+    video = CompositeVideoClip([image_clip]).with_audio(final_audio)
+    video.write_videofile(tmp_video_path, fps=24, codec="libx264")
+    return tmp_video_path
+
+def burn_subtitles_ffmpeg(input_path, ass_path, output_path):
+    print("Burning ASS subtitles with ffmpeg...")
+    cmd = [
+        "ffmpeg",
+        "-y",  # Overwrite output
+        "-i", input_path,
+        "-vf", f"ass={ass_path}",
+        "-c:a", "copy",  # Keep original audio
+        output_path
+    ]
+    subprocess.run(cmd, check=True)
+    print(f"Final video saved: {output_path}")
+
+def create_video(image_path, srt_path, audio_path, output_path, music_path=None):
+    tmp_video_path = "temp_video.mp4"
+    ass_path = "styled_subs.ass"
+
+    # Parse subtitles and determine final duration
+    subtitles = parse_srt_file(srt_path)
+    final_duration = max(sub.end.total_seconds() for sub in subtitles)
+
+    # Step 1: Generate base video
+    create_base_video(image_path, audio_path, final_duration, tmp_video_path, music_path)
+
+    # Step 2: Convert subtitles to styled ASS
+    convert_srt_to_ass(srt_path, ass_path)
+
+    # Step 3: Burn ASS into final video
+    burn_subtitles_ffmpeg(tmp_video_path, ass_path, output_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create a video from image, audio, and SRT subtitles with styled rendering.")
+    parser.add_argument("--image", required=True, help="Path to the image file")
+    parser.add_argument("--srt", required=True, help="Path to the SRT subtitles file")
+    parser.add_argument("--audio", required=True, help="Path to the audio file")
+    parser.add_argument("--music", required=False, help="Optional background music audio file")
+    parser.add_argument("--output", default="output.mp4", help="Output video path (default: output.mp4)")
+
+    args = parser.parse_args()
+    create_video(args.image, args.srt, args.audio, args.output,args.music)
