@@ -6,6 +6,7 @@
 This AI-powered pipeline demonstrates automated content creation
 
 Tech Stack
+</br>
 • C# (Web scraping, orchestration)
 • Python and REST API (AI/ML services)
 • C#<->Python interop
